@@ -112,6 +112,18 @@ while True:
         print('Cache location:\t\t' + cacheLocation)
 
         fileExists = os.path.isfile(cacheLocation)
+        if (fileExists):
+            cacheFile = open(cacheLocation, "r")
+            cacheData = cacheFile.readlines()
+            print('Cache hit! Loading from cache file: ' + cacheLocation)
+            cached_response = ''.join(cacheData)
+            clientSocket.sendall(cached_response.encode('utf-8'))
+            cacheFile.close()
+            print('Sent to the client:')
+            print('> ' + cached_response)
+        else:
+            # cache miss, continue to get resource from origin server
+            raise FileNotFoundError
 
         # Check wether the file is currently in the cache
         cacheFile = open(cacheLocation, "r")
@@ -178,10 +190,18 @@ while True:
 
             # Get the response from the origin server
             # ~~~~ INSERT CODE ~~~~
+            origin_response = b""
+            while True:
+                chunk = originServerSocket.recv(BUFFER_SIZE)
+                if not chunk:
+                    break
+                origin_response += chunk
             # ~~~~ END CODE INSERT ~~~~
 
             # Send the response to the client
             # ~~~~ INSERT CODE ~~~~
+            clientSocket.sendall(origin_response)
+
             # ~~~~ END CODE INSERT ~~~~
 
             # Create a new file in the cache for the requested file.
@@ -193,6 +213,8 @@ while True:
 
             # Save origin server response in the cache file
             # ~~~~ INSERT CODE ~~~~
+            cacheFile.write(origin_response)
+
             # ~~~~ END CODE INSERT ~~~~
             cacheFile.close()
             print('cache file closed')
