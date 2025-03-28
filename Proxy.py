@@ -196,47 +196,31 @@ while True:
             # ~~~~ END CODE INSERT ~~~~
 
             # Send the response to the client
-            # ~~~~ INSERT CODE ~~~~
-
-            # ~~~~ END CODE INSERT ~~~~
 
             # Decode the beginning of the response to check status code
             response_text = origin_response.decode('utf-8', errors='ignore')
 
             print("Raw response_text (repr):", repr(response_text))
             lines = response_text.splitlines()
-            print("Number of lines:", len(lines))
-            if len(lines) > 0:
-                status_line = lines[0]
-                print("Origin server response status:", status_line)
-                # Check if the status code is 404
-                if "404" not in status_line:
-                    # Only cache the response if it's not a 404 error
-                    cacheDir, file = os.path.split(cacheLocation)
-                    print('Cached directory: ' + cacheDir)
-                    if not os.path.exists(cacheDir):
-                        os.makedirs(cacheDir)
-                    print('Cache file created and closed')
-                else:
-                    print("404 Not Found. Not caching the response.")
-            else:
-                print("No lines found in response_text!")
-                clientSocket.sendall(origin_response)
             # ~~~~ END CODE INSERT ~~~~
 
             # Create a new file in the cache for the requested file.
-            cacheDir, file = os.path.split(cacheLocation)
-            print('cached directory ' + cacheDir)
-            if not os.path.exists(cacheDir):
-                os.makedirs(cacheDir)
-            cacheFile = open(cacheLocation, 'wb')
+
 
             # Save origin server response in the cache file
             # ~~~~ INSERT CODE ~~~~
-            cacheFile.write(origin_response)
-
+            if "404" not in lines[0]:
+                cacheDir, file = os.path.split(cacheLocation)
+                print('cached directory ' + cacheDir)
+                if not os.path.exists(cacheDir):
+                    os.makedirs(cacheDir)
+                    cacheFile = open(cacheLocation, 'wb')
+                    cacheFile.write(origin_response)
+                cacheFile.close()
+            else:
+                print("404 Not Found. Not caching the response.")
             # ~~~~ END CODE INSERT ~~~~
-            cacheFile.close()
+
             print('cache file closed')
 
             # finished communicating with origin server - shutdown socket writes
