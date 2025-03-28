@@ -96,7 +96,6 @@ while True:
     resourceParts = URI.split('/', 1)
     hostname = resourceParts[0]
     resource = '/'
-
     if len(resourceParts) == 2:
         # Resource is absolute URI with hostname and resource
         resource = resource + resourceParts[1]
@@ -111,8 +110,7 @@ while True:
 
         print('Cache location:\t\t' + cacheLocation)
 
-        fileExists = os.path.isfile(cacheLocation)
-        if (fileExists):
+        if os.path.isfile(cacheLocation):
             cacheFile = open(cacheLocation, "r")
             cacheData = cacheFile.readlines()
             print('Cache hit! Loading from cache file: ' + cacheLocation)
@@ -147,7 +145,7 @@ while True:
         # and store in originServerSocket
         # ~~~~ INSERT CODE ~~~~
         originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
+        originServerSocket.settimeout(10)  # 可设置超时，避免无限阻塞
         # ~~~~ END CODE INSERT ~~~~
 
         print('Connecting to:\t\t' + hostname + '\n')
@@ -161,31 +159,30 @@ while True:
             # ~~~~ END CODE INSERT ~~~~
             print('Connected to origin Server')
 
-            #originServerRequest = ''
-            #originServerRequestHeader = ''
+            originServerRequest = ''
+            originServerRequestHeader = ''
             # Create origin server request line and headers to send
             # and store in originServerRequestHeader and originServerRequest
             # originServerRequest is the first line in the request and
             # originServerRequestHeader is the second line in the request
             # ~~~~ INSERT CODE ~~~~
-            originServerRequest = f"{method} {resource} {version}"
-            originServerRequestHeader = f"Host: {hostname}\r\nConnection: close"
+            originServerRequest = f'GET {resource} HTTP/1.1'
+            originServerRequestHeader = f'Host: {hostname}\r\nConnection: close'
             # ~~~~ END CODE INSERT ~~~~
 
             # Construct the request to send to the origin server
-            request = "\r\n".join([originServerRequest, originServerRequestHeader, ""])
+            request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n\r\n'
 
             # Request the web resource from origin server
             print('Forwarding request to origin server:')
             for line in request.split('\r\n'):
-                print('> ' + line)
+                print ('> ' + line)
 
             try:
                 originServerSocket.sendall(request.encode())
             except socket.error:
-                print('Forward request to origin failed')
+                print ('Forward request to origin failed')
                 sys.exit()
-
             print('Request sent to origin server\n')
 
             # Get the response from the origin server
@@ -200,8 +197,31 @@ while True:
 
             # Send the response to the client
             # ~~~~ INSERT CODE ~~~~
-            clientSocket.sendall(origin_response)
 
+            # ~~~~ END CODE INSERT ~~~~
+
+            # Decode the beginning of the response to check status code
+            response_text = origin_response.decode('utf-8', errors='ignore')
+
+            print("Raw response_text (repr):", repr(response_text))
+            lines = response_text.splitlines()
+            print("Number of lines:", len(lines))
+            if len(lines) > 0:
+                status_line = lines[0]
+                print("Origin server response status:", status_line)
+                # Check if the status code is 404
+                if "404" not in status_line:
+                    # Only cache the response if it's not a 404 error
+                    cacheDir, file = os.path.split(cacheLocation)
+                    print('Cached directory: ' + cacheDir)
+                    if not os.path.exists(cacheDir):
+                        os.makedirs(cacheDir)
+                    print('Cache file created and closed')
+                else:
+                    print("404 Not Found. Not caching the response.")
+            else:
+                print("No lines found in response_text!")
+                clientSocket.sendall(origin_response)
             # ~~~~ END CODE INSERT ~~~~
 
             # Create a new file in the cache for the requested file.
