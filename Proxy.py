@@ -196,6 +196,7 @@ while True:
             # ~~~~ END CODE INSERT ~~~~
 
             # Send the response to the client
+            clientSocket.sendall(origin_response)
 
             # Decode the beginning of the response to check status code
             response_text = origin_response.decode('utf-8', errors='ignore')
@@ -216,7 +217,7 @@ while True:
                     os.makedirs(cacheDir)
                     cacheFile = open(cacheLocation, 'wb')
                     cacheFile.write(origin_response)
-                cacheFile.close()
+                    cacheFile.close()
             else:
                 print("404 Not Found. Not caching the response.")
             # ~~~~ END CODE INSERT ~~~~
