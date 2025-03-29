@@ -158,8 +158,8 @@ while True:
             # ~~~~ END CODE INSERT ~~~~
             print('Connected to origin Server')
 
-            originServerRequest = ''
-            originServerRequestHeader = ''
+            # originServerRequest = ''
+            # originServerRequestHeader = ''
             # Create origin server request line and headers to send
             # and store in originServerRequestHeader and originServerRequest
             # originServerRequest is the first line in the request and
@@ -222,9 +222,35 @@ while True:
                 print("No headers found!")
 
             # ~~~~ INSERT CODE ~~~~
-            # Only cache the response if the status code is 200.
-            if len(lines) > 0 and "200" in lines[0]:
-                # Ensure that the cache directories exist.
+
+            # -------------------------------
+            # Parse Cache-Control header and determine caching
+            headers_str = headers.decode('latin-1', errors='replace')
+            cache_control = None
+            max_age = None
+            should_cache = True
+            for line in headers_str.split('\r\n'):
+                if line.lower().startswith('cache-control:'):
+                    cache_control = line
+                    # If Cache-Control contains 'private', do not cache.
+                    if 'private' in line.lower():
+                        print("Cache-Control is private, not caching the response")
+                        should_cache = False
+                    if 'max-age=' in line.lower():
+                        max_age_part = line.lower().split('max-age=')[1]
+                        max_age = int(max_age_part.split(',')[0].strip())
+                        print(f"Found max-age directive: {max_age} seconds")
+                        # Do not cache responses with max-age=0
+                        if max_age == 0:
+                            print("Response has max-age=0, not caching")
+                            should_cache = False
+                    break
+            # -------------------------------
+
+            # Save origin server response in the cache files if allowed
+            # As long as caching is allowed
+            if len(lines) > 0 and should_cache:
+                # Ensure that cache directories exist.
                 cacheDir_hdr, _ = os.path.split(cacheLocation_hdr)
                 cacheDir_body, _ = os.path.split(cacheLocation_body)
                 if not os.path.exists(cacheDir_hdr):
@@ -238,7 +264,7 @@ while True:
                     f_body.write(body)
                 print("Response cached.")
             else:
-                print("Not caching response (status not 200).")
+                print("Not caching response or cache not allowed.")
             # ~~~~ END CODE INSERT ~~~~
 
             print('cache file closed')
