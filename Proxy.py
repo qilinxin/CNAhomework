@@ -10,9 +10,11 @@ BUFFER_SIZE = 1000000
 
 # Get the IP address and Port number to use for this web proxy server
 parser = argparse.ArgumentParser()
+# print("parser-----", parser)
 parser.add_argument('hostname', help='the IP Address Of Proxy Server')
 parser.add_argument('port', help='the port number of the proxy server')
 args = parser.parse_args()
+print("args-----", args)
 proxyHost = args.hostname
 proxyPort = int(args.port)
 
@@ -42,7 +44,6 @@ try:
     # Listen on the server socket
     # ~~~~ INSERT CODE ~~~~
     serverSocket.listen(10)
-
     # ~~~~ END CODE INSERT ~~~~
     print('Listening to socket')
 except:
@@ -58,7 +59,6 @@ while True:
     try:
         # ~~~~ INSERT CODE ~~~~
         clientSocket, addr = serverSocket.accept()
-
         # ~~~~ END CODE INSERT ~~~~
         print('Received a connection')
     except:
@@ -102,42 +102,38 @@ while True:
 
     print('Requested Resource:\t' + resource)
 
+    # Define cache file locations: one for header and one for body
+    cacheLocation_hdr = './' + hostname + resource + ".hdr"
+    cacheLocation_body = './' + hostname + resource + ".body"
+    # 如果路径以 '/' 结尾，则添加默认文件名
+    if cacheLocation_hdr.endswith('/.hdr'):
+        cacheLocation_hdr = cacheLocation_hdr.replace('/.hdr', '/default.hdr')
+    if cacheLocation_body.endswith('/.body'):
+        cacheLocation_body = cacheLocation_body.replace('/.body', '/default.body')
+
+    print('Cache header location:\t' + cacheLocation_hdr)
+    print('Cache body location:\t' + cacheLocation_body)
+
     # Check if resource is in cache
     try:
-        cacheLocation = './' + hostname + resource
-        if cacheLocation.endswith('/'):
-            cacheLocation = cacheLocation + 'default'
+        if os.path.isfile(cacheLocation_hdr) and os.path.isfile(cacheLocation_body):
+            # Cache hit: read header and body from cache files and combine
+            cacheFile_hdr = open(cacheLocation_hdr, "rb")
+            cached_headers = cacheFile_hdr.read()
+            cacheFile_hdr.close()
 
-        print('Cache location:\t\t' + cacheLocation)
+            cacheFile_body = open(cacheLocation_body, "rb")
+            cached_body = cacheFile_body.read()
+            cacheFile_body.close()
 
-        if os.path.isfile(cacheLocation):
-            cacheFile = open(cacheLocation, "r")
-            cacheData = cacheFile.readlines()
-            print('Cache hit! Loading from cache file: ' + cacheLocation)
-            cached_response = ''.join(cacheData)
-            clientSocket.sendall(cached_response.encode('utf-8'))
-            cacheFile.close()
-            print('Sent to the client:')
-            print('> ' + cached_response)
+            cached_response = cached_headers + b"\r\n\r\n" + cached_body
+            print('Cache hit! Loading from cache files:')
+            print('> Headers:', cached_headers.decode('utf-8', errors='ignore'))
+            print('> Body: <binary data, length {}>'.format(len(cached_body)))
+            clientSocket.sendall(cached_response)
         else:
             # cache miss, continue to get resource from origin server
             raise FileNotFoundError
-
-        # Check wether the file is currently in the cache
-        cacheFile = open(cacheLocation, "r")
-        cacheData = cacheFile.readlines()
-
-        print('Cache hit! Loading from cache file: ' + cacheLocation)
-        # ProxyServer finds a cache hit
-        # Send back response to client
-        # ~~~~ INSERT CODE ~~~~
-        # make all lines as a string
-        cached_response = ''.join(cacheData)
-        clientSocket.sendall(cached_response.encode('utf-8'))
-        # ~~~~ END CODE INSERT ~~~~
-        cacheFile.close()
-        print('Sent to the client:')
-        print('> ' + cacheData)
     except:
         # cache miss.  Get resource from origin server
         # originServerSocket = None
@@ -176,12 +172,14 @@ while True:
             # Request the web resource from origin server
             print('Forwarding request to origin server:')
             for line in request.split('\r\n'):
-                print ('> ' + line)
+                print('> ' + line)
 
             try:
                 originServerSocket.sendall(request.encode())
+                # Signal that request sending is complete
+                originServerSocket.shutdown(socket.SHUT_WR)
             except socket.error:
-                print ('Forward request to origin failed')
+                print('Forward request to origin failed')
                 sys.exit()
             print('Request sent to origin server\n')
 
@@ -198,28 +196,40 @@ while True:
             # Send the response to the client
             clientSocket.sendall(origin_response)
 
-            # Decode the beginning of the response to check status code
-            response_text = origin_response.decode('utf-8', errors='ignore')
+            # split body and header to check the image is received correctly
+            parts = origin_response.split(b'\r\n\r\n', 1)
+            if len(parts) == 2:
+                headers, body = parts
+            else:
+                headers = b""
+                body = origin_response
 
-            print("Raw response_text (repr):", repr(response_text))
-            lines = response_text.splitlines()
-            # ~~~~ END CODE INSERT ~~~~
-
-            # Create a new file in the cache for the requested file.
-
+            print("Response Headers (repr):", repr(headers))
+            lines = headers.decode('utf-8', errors='ignore').splitlines()
+            if len(lines) > 0:
+                status_line = lines[0]
+                print("Origin server response status:", status_line)
+            else:
+                print("No headers found!")
 
             # Save origin server response in the cache file
             # ~~~~ INSERT CODE ~~~~
-            if "404" not in lines[0]:
-                cacheDir, file = os.path.split(cacheLocation)
-                print('cached directory ' + cacheDir)
-                if not os.path.exists(cacheDir):
-                    os.makedirs(cacheDir)
-                    cacheFile = open(cacheLocation, 'wb')
-                    cacheFile.write(origin_response)
-                    cacheFile.close()
+            # only cache status code is 200
+            if len(lines) > 0 and "200" in lines[0]:
+                # make sure cache directory is existed
+                cacheDir_hdr, _ = os.path.split(cacheLocation_hdr)
+                cacheDir_body, _ = os.path.split(cacheLocation_body)
+                if not os.path.exists(cacheDir_hdr):
+                    os.makedirs(cacheDir_hdr)
+                if not os.path.exists(cacheDir_body):
+                    os.makedirs(cacheDir_body)
+                with open(cacheLocation_hdr, 'wb') as f_hdr:
+                    f_hdr.write(headers)
+                with open(cacheLocation_body, 'wb') as f_body:
+                    f_body.write(body)
+                print("Response cached.")
             else:
-                print("404 Not Found. Not caching the response.")
+                print("Not caching response (status not 200).")
             # ~~~~ END CODE INSERT ~~~~
 
             print('cache file closed')
