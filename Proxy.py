@@ -43,6 +43,7 @@ except:
 try:
     # Listen on the server socket
     # ~~~~ INSERT CODE ~~~~
+    # Begin listening for incoming connections with a backlog of 10.
     serverSocket.listen(10)
     # ~~~~ END CODE INSERT ~~~~
     print('Listening to socket')
@@ -58,6 +59,8 @@ while True:
     # Accept connection from client and store in the clientSocket
     try:
         # ~~~~ INSERT CODE ~~~~
+        # Accept a new connection; clientSocket is the new socket object
+        # for this connection, and addr is the client address.
         clientSocket, addr = serverSocket.accept()
         # ~~~~ END CODE INSERT ~~~~
         print('Received a connection')
@@ -105,7 +108,7 @@ while True:
     # Define cache file locations: one for header and one for body
     cacheLocation_hdr = './' + hostname + resource + ".hdr"
     cacheLocation_body = './' + hostname + resource + ".body"
-    # 如果路径以 '/' 结尾，则添加默认文件名
+    # If path ends with '/' then add default file name for header and body
     if cacheLocation_hdr.endswith('/.hdr'):
         cacheLocation_hdr = cacheLocation_hdr.replace('/.hdr', '/default.hdr')
     if cacheLocation_body.endswith('/.body'):
@@ -162,7 +165,10 @@ while True:
             # originServerRequest is the first line in the request and
             # originServerRequestHeader is the second line in the request
             # ~~~~ INSERT CODE ~~~~
+            # Create origin server request line and headers to send.
+            # originServerRequest is the request line, e.g., "GET /path HTTP/1.1".
             originServerRequest = f'GET {resource} HTTP/1.1'
+            # originServerRequestHeader includes necessary headers, e.g., Host and Connection.
             originServerRequestHeader = f'Host: {hostname}\r\nConnection: close'
             # ~~~~ END CODE INSERT ~~~~
 
@@ -175,16 +181,19 @@ while True:
                 print('> ' + line)
 
             try:
+                # ~~~~ INSERT CODE ~~~~
+                # Send the request to the origin server.
                 originServerSocket.sendall(request.encode())
-                # Signal that request sending is complete
+                # Signal that the request has been fully sent.
                 originServerSocket.shutdown(socket.SHUT_WR)
+                # ~~~~ END CODE INSERT ~~~~
             except socket.error:
                 print('Forward request to origin failed')
                 sys.exit()
             print('Request sent to origin server\n')
 
-            # Get the response from the origin server
             # ~~~~ INSERT CODE ~~~~
+            # Get the response from the origin server.
             origin_response = b""
             while True:
                 chunk = originServerSocket.recv(BUFFER_SIZE)
@@ -212,17 +221,17 @@ while True:
             else:
                 print("No headers found!")
 
-            # Save origin server response in the cache file
             # ~~~~ INSERT CODE ~~~~
-            # only cache status code is 200
+            # Only cache the response if the status code is 200.
             if len(lines) > 0 and "200" in lines[0]:
-                # make sure cache directory is existed
+                # Ensure that the cache directories exist.
                 cacheDir_hdr, _ = os.path.split(cacheLocation_hdr)
                 cacheDir_body, _ = os.path.split(cacheLocation_body)
                 if not os.path.exists(cacheDir_hdr):
                     os.makedirs(cacheDir_hdr)
                 if not os.path.exists(cacheDir_body):
                     os.makedirs(cacheDir_body)
+                # Save the headers and body into separate cache files.
                 with open(cacheLocation_hdr, 'wb') as f_hdr:
                     f_hdr.write(headers)
                 with open(cacheLocation_body, 'wb') as f_body:

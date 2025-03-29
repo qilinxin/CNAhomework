@@ -10,7 +10,6 @@ BUFFER_SIZE = 1000000
 
 # Get the IP address and Port number to use for this web proxy server
 parser = argparse.ArgumentParser()
-# print("parser-----", parser)
 parser.add_argument('hostname', help='the IP Address Of Proxy Server')
 parser.add_argument('port', help='the port number of the proxy server')
 args = parser.parse_args()
@@ -20,31 +19,22 @@ proxyPort = int(args.port)
 
 # Create a server socket, bind it to a port and start listening
 try:
-    # Create a server socket
-    # ~~~~ INSERT CODE ~~~~
     serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    # ~~~~ END CODE INSERT ~~~~
     print('Created socket')
 except:
     print('Failed to create socket')
     sys.exit()
 
 try:
-    # Bind the the server socket to a host and port
-    # ~~~~ INSERT CODE ~~~~
     serverSocket.bind((proxyHost, proxyPort))
-    # ~~~~ END CODE INSERT ~~~~
     print('Port is bound')
 except:
     print('Port is already in use')
     sys.exit()
 
 try:
-    # Listen on the server socket
-    # ~~~~ INSERT CODE ~~~~
     serverSocket.listen(10)
-    # ~~~~ END CODE INSERT ~~~~
     print('Listening to socket')
 except:
     print('Failed to listen')
@@ -57,19 +47,14 @@ while True:
 
     # Accept connection from client and store in the clientSocket
     try:
-        # ~~~~ INSERT CODE ~~~~
         clientSocket, addr = serverSocket.accept()
-        # ~~~~ END CODE INSERT ~~~~
         print('Received a connection')
     except:
         print('Failed to accept connection')
         sys.exit()
 
-    # Get HTTP request from client
-    # and store it in the variable: message_bytes
-    # ~~~~ INSERT CODE ~~~~
+    # Get HTTP request from client and store it in message_bytes
     message_bytes = clientSocket.recv(BUFFER_SIZE)
-    # ~~~~ END CODE INSERT ~~~~
     message = message_bytes.decode('utf-8')
     print('Received request:')
     print('< ' + message)
@@ -97,7 +82,6 @@ while True:
     hostname = resourceParts[0]
     resource = '/'
     if len(resourceParts) == 2:
-        # Resource is absolute URI with hostname and resource
         resource = resource + resourceParts[1]
 
     print('Requested Resource:\t' + resource)
@@ -105,7 +89,6 @@ while True:
     # Define cache file locations: one for header and one for body
     cacheLocation_hdr = './' + hostname + resource + ".hdr"
     cacheLocation_body = './' + hostname + resource + ".body"
-    # 如果路径以 '/' 结尾，则添加默认文件名
     if cacheLocation_hdr.endswith('/.hdr'):
         cacheLocation_hdr = cacheLocation_hdr.replace('/.hdr', '/default.hdr')
     if cacheLocation_body.endswith('/.body'):
@@ -117,15 +100,10 @@ while True:
     # Check if resource is in cache
     try:
         if os.path.isfile(cacheLocation_hdr) and os.path.isfile(cacheLocation_body):
-            # Cache hit: read header and body from cache files and combine
-            cacheFile_hdr = open(cacheLocation_hdr, "rb")
-            cached_headers = cacheFile_hdr.read()
-            cacheFile_hdr.close()
-
-            cacheFile_body = open(cacheLocation_body, "rb")
-            cached_body = cacheFile_body.read()
-            cacheFile_body.close()
-
+            with open(cacheLocation_hdr, "rb") as f_hdr:
+                cached_headers = f_hdr.read()
+            with open(cacheLocation_body, "rb") as f_body:
+                cached_body = f_body.read()
             cached_response = cached_headers + b"\r\n\r\n" + cached_body
             print('Cache hit! Loading from cache files:')
             print('> Headers:', cached_headers.decode('utf-8', errors='ignore'))
@@ -135,48 +113,28 @@ while True:
             # cache miss, continue to get resource from origin server
             raise FileNotFoundError
     except:
-        # cache miss.  Get resource from origin server
-        # originServerSocket = None
-        # Create a socket to connect to origin server
-        # and store in originServerSocket
-        # ~~~~ INSERT CODE ~~~~
+        # cache miss: Get resource from origin server
         originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        originServerSocket.settimeout(10)  # 可设置超时，避免无限阻塞
-        # ~~~~ END CODE INSERT ~~~~
-
+        originServerSocket.settimeout(10)
         print('Connecting to:\t\t' + hostname + '\n')
         try:
-            # Get the IP address for a hostname
+            # Get the IP address for a hostname and connect to the origin server (port 80)
             address = socket.gethostbyname(hostname)
-            # Connect to the origin server
-            # ~~~~ INSERT CODE ~~~~
             originServerSocket.connect((address, 80))
-
-            # ~~~~ END CODE INSERT ~~~~
             print('Connected to origin Server')
 
-            originServerRequest = ''
-            originServerRequestHeader = ''
             # Create origin server request line and headers to send
-            # and store in originServerRequestHeader and originServerRequest
-            # originServerRequest is the first line in the request and
-            # originServerRequestHeader is the second line in the request
-            # ~~~~ INSERT CODE ~~~~
             originServerRequest = f'GET {resource} HTTP/1.1'
             originServerRequestHeader = f'Host: {hostname}\r\nConnection: close'
-            # ~~~~ END CODE INSERT ~~~~
 
             # Construct the request to send to the origin server
             request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n\r\n'
-
-            # Request the web resource from origin server
             print('Forwarding request to origin server:')
             for line in request.split('\r\n'):
                 print('> ' + line)
 
             try:
                 originServerSocket.sendall(request.encode())
-                # Signal that request sending is complete
                 originServerSocket.shutdown(socket.SHUT_WR)
             except socket.error:
                 print('Forward request to origin failed')
@@ -184,19 +142,21 @@ while True:
             print('Request sent to origin server\n')
 
             # Get the response from the origin server
-            # ~~~~ INSERT CODE ~~~~
             origin_response = b""
             while True:
-                chunk = originServerSocket.recv(BUFFER_SIZE)
+                try:
+                    chunk = originServerSocket.recv(BUFFER_SIZE)
+                except socket.timeout:
+                    print("Socket timeout reached")
+                    break
                 if not chunk:
                     break
                 origin_response += chunk
-            # ~~~~ END CODE INSERT ~~~~
 
-            # Send the response to the client
+            # Send the complete response to the client
             clientSocket.sendall(origin_response)
 
-            # split body and header to check the image is received correctly
+            # Split response into headers and body for caching and debugging
             parts = origin_response.split(b'\r\n\r\n', 1)
             if len(parts) == 2:
                 headers, body = parts
@@ -212,11 +172,8 @@ while True:
             else:
                 print("No headers found!")
 
-            # Save origin server response in the cache file
-            # ~~~~ INSERT CODE ~~~~
-            # only cache status code is 200
+            # Save origin server response in the cache files (only cache if status is 200)
             if len(lines) > 0 and "200" in lines[0]:
-                # make sure cache directory is existed
                 cacheDir_hdr, _ = os.path.split(cacheLocation_hdr)
                 cacheDir_body, _ = os.path.split(cacheLocation_body)
                 if not os.path.exists(cacheDir_hdr):
@@ -230,18 +187,15 @@ while True:
                 print("Response cached.")
             else:
                 print("Not caching response (status not 200).")
-            # ~~~~ END CODE INSERT ~~~~
+            print('Finished caching origin response.')
 
-            print('cache file closed')
-
-            # finished communicating with origin server - shutdown socket writes
-            print('origin response received. Closing sockets')
+            print('Origin response received. Closing sockets.')
             originServerSocket.close()
 
             clientSocket.shutdown(socket.SHUT_WR)
-            print('client socket shutdown for writing')
+            print('Client socket shutdown for writing.')
         except OSError as err:
-            print('origin server request failed. ' + err.strerror)
+            print('Origin server request failed. ' + err.strerror)
 
     try:
         clientSocket.close()
