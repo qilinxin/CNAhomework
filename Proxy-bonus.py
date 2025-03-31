@@ -15,6 +15,16 @@ import time
 #    - For max-age, the proxy stores a cache timestamp, calculates the age of the cached response,
 #    and compares it with the max-age value; for Expires, it parses the date and compares it with
 #    the current time. When both are present, max-age takes precedence.
+# 2. Pre-fetch resources
+#     - Content-Type Check: It verifies that the response is HTML by checking if the
+#     headers contain "Content-Type:" and "text/html".
+#     - Extracting Links: The HTML body is decoded and regular expressions extract all
+#     links from href and src attributes.
+#     - Caching Check: It constructs cache file paths for the resource and skips prefetching if the
+#     files already exist.
+#     - Fetching and Caching: For uncached resources, a socket connection is opened to the target host,
+#     an HTTP GET request is sent, and the response is received and split into headers and body.
+#     The response is then saved to cache files in the appropriate directories.
 #
 # =============================================================================
 
