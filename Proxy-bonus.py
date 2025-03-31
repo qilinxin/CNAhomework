@@ -11,21 +11,27 @@ import time
 # =============================================================================
 # 1. Cache expiration time processing:
 #    - The proxy implements HTTP/1.1 cache freshness validation based on RFC 2616,
-#    supporting two mechanisms: Cache-Control max-age and Expires.
+#      supporting two mechanisms: Cache-Control max-age and Expires.
 #    - For max-age, the proxy stores a cache timestamp, calculates the age of the cached response,
-#    and compares it with the max-age value; for Expires, it parses the date and compares it with
-#    the current time. When both are present, max-age takes precedence.
+#      and compares it with the max-age value; for Expires, it parses the date and compares it with
+#      the current time. When both are present, max-age takes precedence.
 # 2. Pre-fetch resources
 #     - Content-Type Check: It verifies that the response is HTML by checking if the
-#     headers contain "Content-Type:" and "text/html".
+#       headers contain "Content-Type:" and "text/html".
 #     - Extracting Links: The HTML body is decoded and regular expressions extract all
-#     links from href and src attributes.
+#       links from href and src attributes.
 #     - Caching Check: It constructs cache file paths for the resource and skips prefetching if the
-#     files already exist.
+#       files already exist.
 #     - Fetching and Caching: For uncached resources, a socket connection is opened to the target host,
-#     an HTTP GET request is sent, and the response is received and split into headers and body.
-#     The response is then saved to cache files in the appropriate directories.
-#
+#       an HTTP GET request is sent, and the response is received and split into headers and body.
+#       The response is then saved to cache files in the appropriate directories.
+# 3. Handle ports in the url
+#     - Port Extraction: Right after splitting the URI, the code checks if hostname contains a colon.
+#       If so, it extracts the port number (defaulting to 80 if parsing fails) and assigns it to origin_port.
+#     - Cache File Naming: When defining cache file locations, if origin_port is not 80, the port is appended
+#       to the hostname (e.g., hostname_8080) to avoid cache collisions.
+#     - Using the Extracted Port: When connecting to the origin server (and during redirections),
+#       the code uses origin_port instead of hardcoded 80.
 # =============================================================================
 
 # 1MB buffer size
@@ -33,7 +39,6 @@ BUFFER_SIZE = 1000000
 
 # Get the IP address and Port number to use for this web proxy server
 parser = argparse.ArgumentParser()
-# print("parser-----", parser)
 parser.add_argument('hostname', help='the IP Address Of Proxy Server')
 parser.add_argument('port', help='the port number of the proxy server')
 args = parser.parse_args()
@@ -126,12 +131,23 @@ while True:
         # Resource is absolute URI with hostname and resource
         resource = resource + resourceParts[1]
 
-    print('Requested Resource:\t' + resource)
+    # --- Modification for Port Handling ---
+    # Check if the hostname includes a port number (e.g., hostname:portnumber)
+    origin_port = 80  # default port
+    if ':' in hostname:
+        hostname, port_str = hostname.split(':', 1)
+        try:
+            origin_port = int(port_str)
+        except ValueError:
+            origin_port = 80
 
-    # Define cache file locations: one for header and one for body
-    cacheLocation_hdr = './' + hostname + resource + ".hdr"
-    cacheLocation_body = './' + hostname + resource + ".body"
-    # If path ends with '/' then add default file name for header and body
+    print("Requested Resource:\t" + resource)
+
+    # Define cache file locations: one for header and one for body.
+    # Include port info in cache file naming if not default.
+    cache_host = hostname if origin_port == 80 else f"{hostname}_{origin_port}"
+    cacheLocation_hdr = './' + cache_host + resource + ".hdr"
+    cacheLocation_body = './' + cache_host + resource + ".body"
     if cacheLocation_hdr.endswith('/.hdr'):
         cacheLocation_hdr = cacheLocation_hdr.replace('/.hdr', '/default.hdr')
     if cacheLocation_body.endswith('/.body'):
@@ -153,7 +169,7 @@ while True:
             headers_str = cached_headers.decode('utf-8', errors='ignore')
             valid_cache = False
 
-            # check max-age  in Cache-Control
+            # Check max-age in Cache-Control header
             for line in headers_str.splitlines():
                 if line.lower().startswith('cache-control:') and 'max-age=' in line.lower():
                     try:
@@ -164,7 +180,7 @@ while True:
                         valid_cache = False
                     break
 
-            # if there is no max-age, check Expires
+            # If no valid max-age, check the Expires header
             if not valid_cache:
                 for line in headers_str.splitlines():
                     if line.lower().startswith('expires:'):
@@ -201,13 +217,13 @@ while True:
         originServerSocket.settimeout(10)
         # ~~~~ END CODE INSERT ~~~~
 
-        print('Connecting to:\t\t' + hostname + '\n')
+        print('Connecting to:\t\t' + hostname + " on port " + str(origin_port) + '\n')
         try:
             # Get the IP address for a hostname
             address = socket.gethostbyname(hostname)
             # Connect to the origin server
             # ~~~~ INSERT CODE ~~~~
-            originServerSocket.connect((address, 80))
+            originServerSocket.connect((address, origin_port))
             # ~~~~ END CODE INSERT ~~~~
             print('Connected to origin Server')
 
@@ -254,7 +270,7 @@ while True:
                     break
                 origin_response += chunk
             # ~~~~ END CODE INSERT ~~~~
-            print("origin_response===",origin_response)
+            print("origin_response===", origin_response)
             # split body and header to check the image is received correctly
             parts = origin_response.split(b'\r\n\r\n', 1)
             if len(parts) == 2:
@@ -278,79 +294,87 @@ while True:
             header_lines = headers_str.split('\r\n')
             if len(header_lines) == 0:
                 break
-            status_line = header_lines[0]
             try:
-                status_code = int(status_line.split()[1])
+                status_code = int(header_lines[0].split()[1])
             except Exception as e:
                 print("Failed to parse status code:", e)
                 break
-            # Redirection handling block
+
+            # Redirection handling block (if HTTP 3xx)
             max_redirects = 5
             redirect_count = 0
             # Check if response is a redirect (HTTP 3xx)
-            if 300 <= status_code < 400:
-                print("Redirect response detected:", status_line)
-                location = None
-                # Look for the "Location" header
-                for line in header_lines:
-                    if line.lower().startswith('location:'):
-                        location = line.split(":", 1)[1].strip()
-                        break
-                if location:
-                    print("Redirect location:", location)
-                    # Assume location is an absolute URL; parse new hostname and resource
-                    parsed = re.sub('^http(s?)://', '', location, count=1)
-                    resourceParts = parsed.split('/', 1)
-                    hostname = resourceParts[0]
-                    resource = '/'
-                    if len(resourceParts) == 2:
-                        resource += resourceParts[1]
-                    print("New request - hostname:", hostname, "resource:", resource)
-
-                    # Close the current origin server socket and create a new one
-                    try:
-                        originServerSocket.close()
-                    except:
-                        pass
-                    try:
-                        originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        originServerSocket.settimeout(10)
-                        address = socket.gethostbyname(hostname)
-                        originServerSocket.connect((address, 80))
-                        print("Connected to new origin server:", hostname)
-                    except Exception as e:
-                        print("Failed to connect to new origin server:", e)
-                        break
-
-                    # Reconstruct the request for the new URL
-                    originServerRequest = f'GET {resource} HTTP/1.1'
-                    originServerRequestHeader = f'Host: {hostname}\r\nConnection: close'
-                    request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n\r\n'
-                    print("Forwarding new request:")
-                    for line in request.split('\r\n'):
-                        if line:
-                            print('> ' + line)
-                    try:
-                        originServerSocket.sendall(request.encode())
-                        # originServerSocket.shutdown(socket.SHUT_WR)
-                    except socket.error:
-                        print("Failed to send new request")
-                        break
-
-                    # Receive the new response from the origin server
-                    origin_response = b""
-                    while True:
-                        chunk = originServerSocket.recv(BUFFER_SIZE)
-                        if not chunk:
-                            break
-                        origin_response += chunk
-
-                    redirect_count += 1
-                    print(f"Redirect count: {redirect_count}")
-                    # Continue loop to check if further redirection is needed
-                else:
-                    print("Redirect response did not contain a Location header.")
-                    break
+            # if 300 <= status_code < 400:
+            #     print("Redirect response detected:", status_line)
+            #     location = None
+            #     # Look for the "Location" header
+            #     for line in header_lines:
+            #         if line.lower().startswith('location:'):
+            #             location = line.split(":", 1)[1].strip()
+            #             break
+            #     if location:
+            #         print("Redirect location:", location)
+            #         # Assume location is an absolute URL; parse new hostname and resource
+            #         parsed = re.sub('^http(s?)://', '', location, count=1)
+            #         resourceParts = parsed.split('/', 1)
+            #         hostname = resourceParts[0]
+            #         resource = '/'
+            #         if len(resourceParts) == 2:
+            #             resource += resourceParts[1]
+            #         print("New request - hostname:", hostname, "resource:", resource)
+            #
+            #         # Parse port from the new hostname, if specified
+            #         origin_port = 80
+            #         if ':' in hostname:
+            #             hostname, port_str = hostname.split(':', 1)
+            #             try:
+            #                 origin_port = int(port_str)
+            #             except ValueError:
+            #                 origin_port = 80
+            #
+            #         try:
+            #             originServerSocket.close()
+            #         except:
+            #             pass
+            #         try:
+            #             originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            #             originServerSocket.settimeout(10)
+            #             address = socket.gethostbyname(hostname)
+            #             originServerSocket.connect((address, origin_port))
+            #             print("Connected to new origin server:", hostname, "on port", origin_port)
+            #         except Exception as e:
+            #             print("Failed to connect to new origin server:", e)
+            #             break
+            #
+            #         # Reconstruct the request for the new URL
+            #         originServerRequest = f'GET {resource} HTTP/1.1'
+            #         originServerRequestHeader = f'Host: {hostname}\r\nConnection: close'
+            #         request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n\r\n'
+            #         print("Forwarding new request:")
+            #         for line in request.split('\r\n'):
+            #             if line:
+            #                 print('> ' + line)
+            #         try:
+            #             originServerSocket.sendall(request.encode())
+            #             # originServerSocket.shutdown(socket.SHUT_WR)
+            #         except socket.error:
+            #             print("Failed to send new request")
+            #             break
+            #
+            #         # Receive the new response from the origin server
+            #         origin_response = b""
+            #         while True:
+            #             chunk = originServerSocket.recv(BUFFER_SIZE)
+            #             if not chunk:
+            #                 break
+            #             origin_response += chunk
+            #
+            #         redirect_count += 1
+            #         print(f"Redirect count: {redirect_count}")
+            #         # Continue loop to check if further redirection is needed
+            #     else:
+            #         print("Redirect response did not contain a Location header.")
+            #         break
 
             cache_control = None
             max_age = None
@@ -373,8 +397,7 @@ while True:
                             should_cache = False
                     break
 
-            # Save origin server response in the cache files if allowed
-            # As long as caching is allowed
+            # Save origin server response in cache if allowed
             if len(lines) > 0 and should_cache:
                 # Ensure that cache directories exist.
                 cacheDir_hdr, _ = os.path.split(cacheLocation_hdr)
@@ -410,7 +433,7 @@ while True:
                 print("start Pre-fetch------- ")
                 try:
                     html_text = body.decode('utf-8', errors='ignore')
-                    # find links in file
+                    # Find links in the HTML body from href and src attributes
                     links = re.findall(r'href="([^"]+)"', html_text) + re.findall(r'src="([^"]+)"', html_text)
                     for link in links:
                         print("Pre-fetch links-------:", links)
@@ -425,7 +448,7 @@ while True:
                         else:
                             absolute_url = link
 
-                        # get information from url
+                        # Parse URL to get host, port and resource path
                         url_without_scheme = re.sub(r'^http(s?)://', '', absolute_url, count=1)
                         if '/' in url_without_scheme:
                             host_and_port, resource_path = url_without_scheme.split('/', 1)
@@ -443,12 +466,12 @@ while True:
                         else:
                             host_pref = host_and_port
 
-                        # create cache file directory
+                        # Create cache file paths for the prefetch resource
                         cache_host_pref = host_pref if prefetch_port == 80 else f"{host_pref}_{prefetch_port}"
                         prefetch_cache_hdr = './' + cache_host_pref + resource_path + ".hdr"
                         prefetch_cache_body = './' + cache_host_pref + resource_path + ".body"
 
-                        # if exist,skip
+                        # Skip prefetch if cache exists
                         if os.path.isfile(prefetch_cache_hdr) and os.path.isfile(prefetch_cache_body):
                             continue
 
@@ -474,7 +497,7 @@ while True:
                                 prefetch_hdr = prefetch_response
                                 prefetch_body = b""
 
-                            # make sure directory exists
+                            # Ensure the cache directories exist
                             prefetch_dir_hdr, _ = os.path.split(prefetch_cache_hdr)
                             prefetch_dir_body, _ = os.path.split(prefetch_cache_body)
                             if not os.path.exists(prefetch_dir_hdr):
