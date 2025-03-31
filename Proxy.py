@@ -202,9 +202,6 @@ while True:
                 origin_response += chunk
             # ~~~~ END CODE INSERT ~~~~
 
-            # Send the response to the client
-            clientSocket.sendall(origin_response)
-
             # split body and header to check the image is received correctly
             parts = origin_response.split(b'\r\n\r\n', 1)
             if len(parts) == 2:
@@ -223,12 +220,92 @@ while True:
 
             # ~~~~ INSERT CODE ~~~~
 
-            # -------------------------------
             # Parse Cache-Control header and determine caching
             headers_str = headers.decode('latin-1', errors='replace')
+            header_lines = headers_str.split('\r\n')
+            if len(header_lines) == 0:
+                break
+            status_line = header_lines[0]
+            try:
+                status_code = int(status_line.split()[1])
+            except Exception as e:
+                print("Failed to parse status code:", e)
+                break
+            # Redirection handling block
+            max_redirects = 5
+            redirect_count = 0
+            # Check if response is a redirect (HTTP 3xx)
+            if 300 <= status_code < 400:
+                print("Redirect response detected:", status_line)
+                location = None
+                # Look for the "Location" header
+                for line in header_lines:
+                    if line.lower().startswith('location:'):
+                        location = line.split(":", 1)[1].strip()
+                        break
+                if location:
+                    print("Redirect location:", location)
+                    # Assume location is an absolute URL; parse new hostname and resource
+                    parsed = re.sub('^http(s?)://', '', location, count=1)
+                    resourceParts = parsed.split('/', 1)
+                    hostname = resourceParts[0]
+                    resource = '/'
+                    if len(resourceParts) == 2:
+                        resource += resourceParts[1]
+                    print("New request - hostname:", hostname, "resource:", resource)
+
+                    # Close the current origin server socket and create a new one
+                    try:
+                        originServerSocket.close()
+                    except:
+                        pass
+                    try:
+                        originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        originServerSocket.settimeout(10)
+                        address = socket.gethostbyname(hostname)
+                        originServerSocket.connect((address, 80))
+                        print("Connected to new origin server:", hostname)
+                    except Exception as e:
+                        print("Failed to connect to new origin server:", e)
+                        break
+
+                    # Reconstruct the request for the new URL
+                    originServerRequest = f'GET {resource} HTTP/1.1'
+                    originServerRequestHeader = f'Host: {hostname}\r\nConnection: close'
+                    request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n\r\n'
+                    print("Forwarding new request:")
+                    for line in request.split('\r\n'):
+                        if line:
+                            print('> ' + line)
+                    try:
+                        originServerSocket.sendall(request.encode())
+                        originServerSocket.shutdown(socket.SHUT_WR)
+                    except socket.error:
+                        print("Failed to send new request")
+                        break
+
+                    # Receive the new response from the origin server
+                    origin_response = b""
+                    while True:
+                        chunk = originServerSocket.recv(BUFFER_SIZE)
+                        if not chunk:
+                            break
+                        origin_response += chunk
+
+                    redirect_count += 1
+                    print(f"Redirect count: {redirect_count}")
+                    # Continue loop to check if further redirection is needed
+                else:
+                    print("Redirect response did not contain a Location header.")
+                    break
+            else:
+                # Not a redirect response, exit the redirection loop
+                break
+
             cache_control = None
             max_age = None
             should_cache = True
+            should_redirect = False
             for line in headers_str.split('\r\n'):
                 if line.lower().startswith('cache-control:'):
                     cache_control = line
@@ -245,7 +322,6 @@ while True:
                             print("Response has max-age=0, not caching")
                             should_cache = False
                     break
-            # -------------------------------
 
             # Save origin server response in the cache files if allowed
             # As long as caching is allowed
@@ -270,9 +346,11 @@ while True:
             print('cache file closed')
 
             # finished communicating with origin server - shutdown socket writes
+
             print('origin response received. Closing sockets')
             originServerSocket.close()
-
+            # Send the response to the client
+            clientSocket.sendall(origin_response)
             clientSocket.shutdown(socket.SHUT_WR)
             print('client socket shutdown for writing')
         except OSError as err:
