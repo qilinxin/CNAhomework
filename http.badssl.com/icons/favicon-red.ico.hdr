@@ -1,10 +1,10 @@
 HTTP/1.1 200 OK
 Server: nginx/1.10.3 (Ubuntu)
 Date: Mon, 31 Mar 2025 04:24:14 GMT
-Content-Type: text/html
-Content-Length: 483
-Last-Modified: Tue, 25 Mar 2025 21:00:42 GMT
+Content-Type: image/x-icon
+Content-Length: 5430
+Last-Modified: Tue, 17 May 2022 16:17:37 GMT
 Connection: close
-ETag: "67e3197a-1e3"
+ETag: "6283caa1-1536"
 Cache-Control: no-store
 Accept-Ranges: bytes

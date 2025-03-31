@@ -393,9 +393,95 @@ while True:
             clientSocket.sendall(origin_response)
             clientSocket.shutdown(socket.SHUT_WR)
             print('client socket shutdown for writing')
+
+            # --- Added: Prefetch associated files for HTML pages ---
+            # only save caches when Content-Type is HTML
+            if 'Content-Type:' in headers_str and 'text/html' in headers_str.lower():
+                print("start Pre-fetch------- ")
+                try:
+                    html_text = body.decode('utf-8', errors='ignore')
+                    # find links in file
+                    links = re.findall(r'href="([^"]+)"', html_text) + re.findall(r'src="([^"]+)"', html_text)
+                    for link in links:
+                        print("Pre-fetch links-------:", links)
+
+                        # create absolute URL
+                        if not link.startswith("http"):
+                            if link.startswith('/'):
+                                absolute_url = f"http://{hostname}{link}"
+                            else:
+                                base_dir = os.path.dirname(resource)
+                                absolute_url = f"http://{hostname}{base_dir}/{link}"
+                        else:
+                            absolute_url = link
+
+                        # get information from url
+                        url_without_scheme = re.sub(r'^http(s?)://', '', absolute_url, count=1)
+                        if '/' in url_without_scheme:
+                            host_and_port, resource_path = url_without_scheme.split('/', 1)
+                            resource_path = '/' + resource_path
+                        else:
+                            host_and_port = url_without_scheme
+                            resource_path = '/'
+                        prefetch_port = 80
+                        if ':' in host_and_port:
+                            host_pref, port_pref = host_and_port.split(':', 1)
+                            try:
+                                prefetch_port = int(port_pref)
+                            except:
+                                prefetch_port = 80
+                        else:
+                            host_pref = host_and_port
+
+                        # create cache file directory
+                        cache_host_pref = host_pref if prefetch_port == 80 else f"{host_pref}_{prefetch_port}"
+                        prefetch_cache_hdr = './' + cache_host_pref + resource_path + ".hdr"
+                        prefetch_cache_body = './' + cache_host_pref + resource_path + ".body"
+
+                        # if exist,skip
+                        if os.path.isfile(prefetch_cache_hdr) and os.path.isfile(prefetch_cache_body):
+                            continue
+
+                        try:
+                            prefetch_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            prefetch_socket.settimeout(10)
+                            prefetch_address = socket.gethostbyname(host_pref)
+                            prefetch_socket.connect((prefetch_address, prefetch_port))
+                            prefetch_request = f"GET {resource_path} HTTP/1.1\r\nHost: {host_pref}\r\nConnection: close\r\n\r\n"
+                            prefetch_socket.sendall(prefetch_request.encode())
+                            prefetch_response = b""
+                            while True:
+                                chunk = prefetch_socket.recv(BUFFER_SIZE)
+                                if not chunk:
+                                    break
+                                prefetch_response += chunk
+                            prefetch_socket.close()
+
+                            prefetch_parts = prefetch_response.split(b'\r\n\r\n', 1)
+                            if len(prefetch_parts) == 2:
+                                prefetch_hdr, prefetch_body = prefetch_parts
+                            else:
+                                prefetch_hdr = prefetch_response
+                                prefetch_body = b""
+
+                            # make sure directory exists
+                            prefetch_dir_hdr, _ = os.path.split(prefetch_cache_hdr)
+                            prefetch_dir_body, _ = os.path.split(prefetch_cache_body)
+                            if not os.path.exists(prefetch_dir_hdr):
+                                os.makedirs(prefetch_dir_hdr)
+                            if not os.path.exists(prefetch_dir_body):
+                                os.makedirs(prefetch_dir_body)
+                            with open(prefetch_cache_hdr, 'wb') as f:
+                                f.write(prefetch_hdr)
+                            with open(prefetch_cache_body, 'wb') as f:
+                                f.write(prefetch_body)
+                            print("Prefetched and cached:", absolute_url)
+                        except Exception as e:
+                            print("Prefetch failed for", absolute_url, ":", e)
+                except Exception as e:
+                    print("Error during prefetching:", e)
         except OSError as err:
             print('origin server request failed. ' + err.strerror)
-
     try:
         clientSocket.close()
     except:
