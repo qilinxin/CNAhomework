@@ -254,7 +254,7 @@ while True:
                 # Send the request to the origin server.
                 originServerSocket.sendall(request.encode())
                 # Signal that the request has been fully sent.
-                originServerSocket.shutdown(socket.SHUT_WR)
+                # originServerSocket.shutdown(socket.SHUT_WR)
                 # ~~~~ END CODE INSERT ~~~~
             except socket.error:
                 print('Forward request to origin failed')
@@ -304,77 +304,77 @@ while True:
             max_redirects = 5
             redirect_count = 0
             # Check if response is a redirect (HTTP 3xx)
-            # if 300 <= status_code < 400:
-            #     print("Redirect response detected:", status_line)
-            #     location = None
-            #     # Look for the "Location" header
-            #     for line in header_lines:
-            #         if line.lower().startswith('location:'):
-            #             location = line.split(":", 1)[1].strip()
-            #             break
-            #     if location:
-            #         print("Redirect location:", location)
-            #         # Assume location is an absolute URL; parse new hostname and resource
-            #         parsed = re.sub('^http(s?)://', '', location, count=1)
-            #         resourceParts = parsed.split('/', 1)
-            #         hostname = resourceParts[0]
-            #         resource = '/'
-            #         if len(resourceParts) == 2:
-            #             resource += resourceParts[1]
-            #         print("New request - hostname:", hostname, "resource:", resource)
-            #
-            #         # Parse port from the new hostname, if specified
-            #         origin_port = 80
-            #         if ':' in hostname:
-            #             hostname, port_str = hostname.split(':', 1)
-            #             try:
-            #                 origin_port = int(port_str)
-            #             except ValueError:
-            #                 origin_port = 80
-            #
-            #         try:
-            #             originServerSocket.close()
-            #         except:
-            #             pass
-            #         try:
-            #             originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            #             originServerSocket.settimeout(10)
-            #             address = socket.gethostbyname(hostname)
-            #             originServerSocket.connect((address, origin_port))
-            #             print("Connected to new origin server:", hostname, "on port", origin_port)
-            #         except Exception as e:
-            #             print("Failed to connect to new origin server:", e)
-            #             break
-            #
-            #         # Reconstruct the request for the new URL
-            #         originServerRequest = f'GET {resource} HTTP/1.1'
-            #         originServerRequestHeader = f'Host: {hostname}\r\nConnection: close'
-            #         request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n\r\n'
-            #         print("Forwarding new request:")
-            #         for line in request.split('\r\n'):
-            #             if line:
-            #                 print('> ' + line)
-            #         try:
-            #             originServerSocket.sendall(request.encode())
-            #             # originServerSocket.shutdown(socket.SHUT_WR)
-            #         except socket.error:
-            #             print("Failed to send new request")
-            #             break
-            #
-            #         # Receive the new response from the origin server
-            #         origin_response = b""
-            #         while True:
-            #             chunk = originServerSocket.recv(BUFFER_SIZE)
-            #             if not chunk:
-            #                 break
-            #             origin_response += chunk
-            #
-            #         redirect_count += 1
-            #         print(f"Redirect count: {redirect_count}")
-            #         # Continue loop to check if further redirection is needed
-            #     else:
-            #         print("Redirect response did not contain a Location header.")
-            #         break
+            if 300 <= status_code < 400:
+                print("Redirect response detected:", status_line)
+                location = None
+                # Look for the "Location" header
+                for line in header_lines:
+                    if line.lower().startswith('location:'):
+                        location = line.split(":", 1)[1].strip()
+                        break
+                if location:
+                    print("Redirect location:", location)
+                    # Assume location is an absolute URL; parse new hostname and resource
+                    parsed = re.sub('^http(s?)://', '', location, count=1)
+                    resourceParts = parsed.split('/', 1)
+                    hostname = resourceParts[0]
+                    resource = '/'
+                    if len(resourceParts) == 2:
+                        resource += resourceParts[1]
+                    print("New request - hostname:", hostname, "resource:", resource)
+
+                    # Parse port from the new hostname, if specified
+                    origin_port = 80
+                    if ':' in hostname:
+                        hostname, port_str = hostname.split(':', 1)
+                        try:
+                            origin_port = int(port_str)
+                        except ValueError:
+                            origin_port = 80
+
+                    try:
+                        originServerSocket.close()
+                    except:
+                        pass
+                    try:
+                        originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        originServerSocket.settimeout(10)
+                        address = socket.gethostbyname(hostname)
+                        originServerSocket.connect((address, origin_port))
+                        print("Connected to new origin server:", hostname, "on port", origin_port)
+                    except Exception as e:
+                        print("Failed to connect to new origin server:", e)
+                        break
+
+                    # Reconstruct the request for the new URL
+                    originServerRequest = f'GET {resource} HTTP/1.1'
+                    originServerRequestHeader = f'Host: {hostname}\r\nConnection: close'
+                    request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n\r\n'
+                    print("Forwarding new request:")
+                    for line in request.split('\r\n'):
+                        if line:
+                            print('> ' + line)
+                    try:
+                        originServerSocket.sendall(request.encode())
+                        # originServerSocket.shutdown(socket.SHUT_WR)
+                    except socket.error:
+                        print("Failed to send new request")
+                        break
+
+                    # Receive the new response from the origin server
+                    origin_response = b""
+                    while True:
+                        chunk = originServerSocket.recv(BUFFER_SIZE)
+                        if not chunk:
+                            break
+                        origin_response += chunk
+
+                    redirect_count += 1
+                    print(f"Redirect count: {redirect_count}")
+                    # Continue loop to check if further redirection is needed
+                else:
+                    print("Redirect response did not contain a Location header.")
+                    break
 
             cache_control = None
             max_age = None

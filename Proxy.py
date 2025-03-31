@@ -198,7 +198,7 @@ while True:
                 # Send the request to the origin server.
                 originServerSocket.sendall(request.encode())
                 # Signal that the request has been fully sent.
-                originServerSocket.shutdown(socket.SHUT_WR)
+                # originServerSocket.shutdown(socket.SHUT_WR)
                 # ~~~~ END CODE INSERT ~~~~
             except socket.error:
                 print('Forward request to origin failed')
@@ -214,7 +214,7 @@ while True:
                     break
                 origin_response += chunk
             # ~~~~ END CODE INSERT ~~~~
-            print("origin_response===",origin_response)
+            print("origin_response===========", origin_response)
             # split body and header to check the image is received correctly
             parts = origin_response.split(b'\r\n\r\n', 1)
             if len(parts) == 2:
@@ -292,7 +292,7 @@ while True:
                             print('> ' + line)
                     try:
                         originServerSocket.sendall(request.encode())
-                        # originServerSocket.shutdown(socket.SHUT_WR)
+                        originServerSocket.shutdown(socket.SHUT_WR)
                     except socket.error:
                         print("Failed to send new request")
                         break

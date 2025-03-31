@@ -1,0 +1,9 @@
+{
+  "args": {}, 
+  "headers": {
+    "Host": "httpbin.org", 
+    "X-Amzn-Trace-Id": "Root=1-67ea3176-10d6c42834602cbc7ad29546"
+  }, 
+  "origin": "210.5.32.224", 
+  "url": "http://httpbin.org/cache/3600"
+}
