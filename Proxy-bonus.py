@@ -6,6 +6,18 @@ import argparse
 import re
 import time
 
+# =============================================================================
+# PROXY FEATURES IMPLEMENTATION
+# =============================================================================
+# 1. Cache expiration time processing:
+#    - The proxy implements HTTP/1.1 cache freshness validation based on RFC 2616,
+#    supporting two mechanisms: Cache-Control max-age and Expires.
+#    - For max-age, the proxy stores a cache timestamp, calculates the age of the cached response,
+#    and compares it with the max-age value; for Expires, it parses the date and compares it with
+#    the current time. When both are present, max-age takes precedence.
+#
+# =============================================================================
+
 # 1MB buffer size
 BUFFER_SIZE = 1000000
 
@@ -124,23 +136,41 @@ while True:
             # check cache file by last modified time and max-age in Cache-Control
             cache_mtime = os.path.getmtime(cacheLocation_hdr)
             current_time = time.time()
-            # get max-age from head
-            cacheFile_hdr = open(cacheLocation_hdr, "rb")
-            cached_headers = cacheFile_hdr.read()
-            cacheFile_hdr.close()
+
+            # get cache head
+            with open(cacheLocation_hdr, "rb") as cacheFile_hdr:
+                cached_headers = cacheFile_hdr.read()
             headers_str = cached_headers.decode('utf-8', errors='ignore')
-            max_age = -1
+            valid_cache = False
+
+            # check max-age  in Cache-Control
             for line in headers_str.splitlines():
                 if line.lower().startswith('cache-control:') and 'max-age=' in line.lower():
-                    max_age = int(line.lower().split('max-age=')[1].split()[0])
+                    try:
+                        max_age = int(line.lower().split('max-age=')[1].split()[0])
+                        if (current_time - cache_mtime) <= max_age:
+                            valid_cache = True
+                    except:
+                        valid_cache = False
                     break
 
-            if (current_time - cache_mtime) <= max_age or max_age == -1:
-                # Cache hit: read header and body from cache files and combine
-                cacheFile_body = open(cacheLocation_body, "rb")
-                cached_body = cacheFile_body.read()
-                cacheFile_body.close()
+            # if there is no max-age, check Expires
+            if not valid_cache:
+                for line in headers_str.splitlines():
+                    if line.lower().startswith('expires:'):
+                        expires_str = line.split(":", 1)[1].strip()
+                        try:
+                            expires_time_struct = time.strptime(expires_str, "%a, %d %b %Y %H:%M:%S %Z")
+                            expires_time = time.mktime(expires_time_struct)
+                            if current_time <= expires_time:
+                                valid_cache = True
+                        except Exception as e:
+                            valid_cache = False
+                        break
 
+            if valid_cache:
+                with open(cacheLocation_body, "rb") as cacheFile_body:
+                    cached_body = cacheFile_body.read()
                 cached_response = cached_headers + b"\r\n\r\n" + cached_body
                 print('Cache hit! Loading from cache files:')
                 print('> Headers:', headers_str)
