@@ -4,6 +4,7 @@ import sys
 import os
 import argparse
 import re
+import time
 
 # 1MB buffer size
 BUFFER_SIZE = 1000000
@@ -120,20 +121,33 @@ while True:
     # Check if resource is in cache
     try:
         if os.path.isfile(cacheLocation_hdr) and os.path.isfile(cacheLocation_body):
-            # Cache hit: read header and body from cache files and combine
+            # check cache file by last modified time and max-age in Cache-Control
+            cache_mtime = os.path.getmtime(cacheLocation_hdr)
+            current_time = time.time()
+            # get max-age from head
             cacheFile_hdr = open(cacheLocation_hdr, "rb")
             cached_headers = cacheFile_hdr.read()
             cacheFile_hdr.close()
+            headers_str = cached_headers.decode('utf-8', errors='ignore')
+            max_age = -1
+            for line in headers_str.splitlines():
+                if line.lower().startswith('cache-control:') and 'max-age=' in line.lower():
+                    max_age = int(line.lower().split('max-age=')[1].split()[0])
+                    break
 
-            cacheFile_body = open(cacheLocation_body, "rb")
-            cached_body = cacheFile_body.read()
-            cacheFile_body.close()
+            if (current_time - cache_mtime) <= max_age or max_age == -1:
+                # Cache hit: read header and body from cache files and combine
+                cacheFile_body = open(cacheLocation_body, "rb")
+                cached_body = cacheFile_body.read()
+                cacheFile_body.close()
 
-            cached_response = cached_headers + b"\r\n\r\n" + cached_body
-            print('Cache hit! Loading from cache files:')
-            print('> Headers:', cached_headers.decode('utf-8', errors='ignore'))
-            print('> Body: <binary data, length {}>'.format(len(cached_body)))
-            clientSocket.sendall(cached_response)
+                cached_response = cached_headers + b"\r\n\r\n" + cached_body
+                print('Cache hit! Loading from cache files:')
+                print('> Headers:', headers_str)
+                print('> Body: <binary data, length {}>'.format(len(cached_body)))
+                clientSocket.sendall(cached_response)
+            else:
+                raise FileNotFoundError
         else:
             # cache miss, continue to get resource from origin server
             raise FileNotFoundError
@@ -144,7 +158,7 @@ while True:
         # and store in originServerSocket
         # ~~~~ INSERT CODE ~~~~
         originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        originServerSocket.settimeout(10)  # 可设置超时，避免无限阻塞
+        originServerSocket.settimeout(10)
         # ~~~~ END CODE INSERT ~~~~
 
         print('Connecting to:\t\t' + hostname + '\n')
@@ -154,7 +168,6 @@ while True:
             # Connect to the origin server
             # ~~~~ INSERT CODE ~~~~
             originServerSocket.connect((address, 80))
-
             # ~~~~ END CODE INSERT ~~~~
             print('Connected to origin Server')
 
@@ -201,7 +214,7 @@ while True:
                     break
                 origin_response += chunk
             # ~~~~ END CODE INSERT ~~~~
-
+            print("origin_response===",origin_response)
             # split body and header to check the image is received correctly
             parts = origin_response.split(b'\r\n\r\n', 1)
             if len(parts) == 2:
@@ -279,7 +292,7 @@ while True:
                             print('> ' + line)
                     try:
                         originServerSocket.sendall(request.encode())
-                        originServerSocket.shutdown(socket.SHUT_WR)
+                        # originServerSocket.shutdown(socket.SHUT_WR)
                     except socket.error:
                         print("Failed to send new request")
                         break
@@ -298,9 +311,6 @@ while True:
                 else:
                     print("Redirect response did not contain a Location header.")
                     break
-            else:
-                # Not a redirect response, exit the redirection loop
-                break
 
             cache_control = None
             max_age = None
