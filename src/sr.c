@@ -149,23 +149,29 @@ void A_input(struct pkt packet)
     printf("----A: corrupted ACK is received, do nothing!\n");
 }
 
-/* called when A's timer goes off */
+/*
+ * A_timerinterrupt
+ *
+ * This function is invoked when the timer for the earliest unacknowledged packet expires.
+ * In Selective Repeat, we only retransmit the single timed‐out packet (the oldest in the window),
+ * rather than the entire window as in Go‐Back‐N.
+ */
 void A_timerinterrupt(void)
 {
-  int i;
-
+  // Log the timeout event
   if (TRACE > 0)
     printf("----A: time out,resend packets!\n");
 
-  for(i=0; i<windowcount; i++) {
+  if(TRACE > 0)
+    printf("---A: resending packet %d\n", buffer[windowfirst].seqnum);
 
-    if (TRACE > 0)
-      printf ("---A: resending packet %d\n", (buffer[(windowfirst+i) % WINDOWSIZE]).seqnum);
+  // Identify and retransmit the oldest unACKed packet
+  tolayer3(A, buffer[windowfirst]);
+  packets_resent++;
 
-    tolayer3(A,buffer[(windowfirst+i) % WINDOWSIZE]);
-    packets_resent++;
-    if (i==0) starttimer(A,RTT);
-  }
+  // Restart the timer for the next pending packet if there is remain
+  if(windowcount > 0)
+    starttimer(A, RTT);
 }
 
 
