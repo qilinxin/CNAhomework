@@ -61,7 +61,7 @@ static struct pkt buffer[WINDOWSIZE];  /* array for storing packets waiting for 
 static int windowfirst, windowlast;    /* array indexes of the first/last packet awaiting ACK */
 static int windowcount;                /* the number of packets currently awaiting an ACK */
 static int A_nextseqnum;               /* the next sequence number to be used by the sender */
-static bool isAcked[WINDOWSIZE];       /* array to track which packet is isAcked   */
+static bool isAcked[SEQSPACE];         /* array to track which sequence numbers are acked */
 
 /* called from layer 5 (application layer), passed the message to be sent to other side */
 void A_output(struct msg message)
@@ -188,6 +188,8 @@ void A_init(void)
 		     so initially this is set to -1
 		   */
   windowcount = 0;
+  for (int i = 0; i < SEQSPACE; i++)
+    isAcked[i] = false;
 }
 
 
@@ -205,25 +207,25 @@ void B_input(struct pkt packet)
   struct pkt sendpkt;
   int i;
 
-  // Check for corruption; remove order check
-  if ((!IsCorrupted(packet)))
+  /* Check for corruption; remove order check */
+  if (!IsCorrupted(packet))
   {
     if (TRACE > 0)
       printf("----B: packet %d is correctly received, send ACK!\n", packet.seqnum);
     packets_received++;
 
     /* Buffer the packet if it has not been seen before */
-    if(received[packet.seqnum] == false)
+    if (!received[packet.seqnum])
     {
       received[packet.seqnum] = true;
-      for(i = 0; i < 20; i++)
+      for (i = 0; i < 20; i++)
         recvBuffer[packet.seqnum].payload[i] = packet.payload[i];
     }
 
-    /*  Deliver all consecutively received packets starting at expectedseqnum
-    while(received[expectedseqnum] == true)
+    /*  Deliver all consecutively received packets starting at expectedseqnum */
+    while (received[expectedseqnum])
     {
-      tolayer5(B, packet.payload);
+      tolayer5(B, recvBuffer[expectedseqnum].payload);
       received[expectedseqnum] = false;
       expectedseqnum = (expectedseqnum + 1) % SEQSPACE;
     }
@@ -231,7 +233,7 @@ void B_input(struct pkt packet)
     /*  Construct ACK packet for the received sequence number */
     sendpkt.acknum = packet.seqnum;
     sendpkt.seqnum = NOTINUSE;
-    for(i = 0; i < 20; i++)
+    for (i = 0; i < 20; i++)
       sendpkt.payload[i] = '0';
 
     sendpkt.checksum = ComputeChecksum(sendpkt);
@@ -246,7 +248,8 @@ void B_input(struct pkt packet)
 void B_init(void)
 {
   expectedseqnum = 0;
-  B_nextseqnum = 1;
+  for (int i = 0; i < SEQSPACE; i++)
+    received[i] = false;
 }
 
 /******************************************************************************
