@@ -113,13 +113,13 @@ void A_output(struct msg message)
 */
 void A_input(struct pkt packet)
 {
-  // Only process if packet is not corrupted
+  /* Only process if packet is not corrupted */
   if (!IsCorrupted(packet))
   {
     if (TRACE > 0)
       printf("----A: uncorrupted ACK %d is received\n", packet.acknum);
 
-    // If this ACK number hasn’t been seen before
+    /* If this ACK number hasn’t been seen before */
     if (!isAcked[packet.acknum])
     {
       if (TRACE > 0)
@@ -127,7 +127,7 @@ void A_input(struct pkt packet)
       new_ACKs++;
       isAcked[packet.acknum] = true;
 
-      // If this ACK corresponds to the base of our window, slide window forward past all consecutively isAcked packets
+      /* If this ACK corresponds to the base of our window, slide window forward past all consecutively isAcked packets */
       if (packet.acknum == buffer[windowfirst].seqnum)
       {
         while (windowcount > 0 && isAcked[buffer[windowfirst].seqnum])
@@ -136,7 +136,7 @@ void A_input(struct pkt packet)
           windowcount--;
         }
 
-       // Stop the current timer and, if there are still unACKed packets in the window, restart it
+       /* Stop the current timer and, if there are still unACKed packets in the window, restart it */
         stoptimer(A);
         if (windowcount > 0)
           starttimer(A, RTT);
@@ -158,18 +158,18 @@ void A_input(struct pkt packet)
  */
 void A_timerinterrupt(void)
 {
-  // Log the timeout event
+  /*  Log the timeout event */
   if (TRACE > 0)
     printf("----A: time out,resend packets!\n");
 
   if(TRACE > 0)
     printf("---A: resending packet %d\n", buffer[windowfirst].seqnum);
 
-  // Identify and retransmit the oldest unACKed packet
+  /* Identify and retransmit the oldest unACKed packet */
   tolayer3(A, buffer[windowfirst]);
   packets_resent++;
 
-  // Restart the timer for the next pending packet if there is remain
+  /*  Restart the timer for the next pending packet if there is remain */
   if(windowcount > 0)
     starttimer(A, RTT);
 }
@@ -212,7 +212,7 @@ void B_input(struct pkt packet)
       printf("----B: packet %d is correctly received, send ACK!\n", packet.seqnum);
     packets_received++;
 
-    // Buffer the packet if it has not been seen before
+    /* Buffer the packet if it has not been seen before */
     if(received[packet.seqnum] == false)
     {
       received[packet.seqnum] = true;
@@ -220,7 +220,7 @@ void B_input(struct pkt packet)
         recvBuffer[packet.seqnum].payload[i] = packet.payload[i];
     }
 
-    // Deliver all consecutively received packets starting at expectedseqnum
+    /*  Deliver all consecutively received packets starting at expectedseqnum
     while(received[expectedseqnum] == true)
     {
       tolayer5(B, packet.payload);
@@ -228,7 +228,7 @@ void B_input(struct pkt packet)
       expectedseqnum = (expectedseqnum + 1) % SEQSPACE;
     }
 
-    // Construct ACK packet for the received sequence number
+    /*  Construct ACK packet for the received sequence number */
     sendpkt.acknum = packet.seqnum;
     sendpkt.seqnum = NOTINUSE;
     for(i = 0; i < 20; i++)
@@ -236,7 +236,7 @@ void B_input(struct pkt packet)
 
     sendpkt.checksum = ComputeChecksum(sendpkt);
 
-    // Send ACK back to sender
+    /*  Send ACK back to sender */
     tolayer3(B, sendpkt);
   }
 }
