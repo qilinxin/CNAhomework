@@ -1,21 +1,23 @@
 # Compiler and flags
-CC = gcc
-CFLAGS = -Wall -ansi -pedantic -Iinclude -Isrc
+CC      := gcc
+CFLAGS  := -Wall -ansi -pedantic
 
-# Source and target files
-SRC_DIR = src
-INC_DIR = include
+# Source lists
+GBN_SRCS := emulator.c gbn.c
+SR_SRCS  := emulator.c sr.c
 
-GBN_SRC = $(INC_DIR)/emulator.c $(SRC_DIR)/gbn.c
-SR_SRC  = $(INC_DIR)/emulator.c $(SRC_DIR)/sr.c
-
+# Default target: build both
 all: gbn sr
 
-gbn: $(GBN_SRC)
-	$(CC) $(CFLAGS) -o gbn $(GBN_SRC)
+# Build Go‐Back‐N simulator
+gbn: $(GBN_SRCS)
+	$(CC) $(CFLAGS) -o $@ $(GBN_SRCS)
 
-sr: $(SR_SRC)
-	$(CC) $(CFLAGS) -o sr $(SR_SRC)
+# Build Selective‐Repeat simulator
+sr: $(SR_SRCS)
+	$(CC) $(CFLAGS) -o $@ $(SR_SRCS)
 
+# Remove built executables
+.PHONY: clean
 clean:
 	rm -f gbn sr
